@@ -553,6 +553,11 @@ def update_grades(info, scores, slips, assignment):
             slipIndex = i 
         elif "ID" == studentData[i] : 
             csid = i
+    
+    studentData = reader.next()     #skip second line
+    writer.writerow(studentData)
+    studentData = reader.next()     #skip third line
+    writer.writerow(studentData)
 
     for studentData in reader:
         id = studentData[csid]
