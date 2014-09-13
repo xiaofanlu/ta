@@ -146,6 +146,7 @@ class rubricLine(object):
         else :
           self.fc = 0
           self.dc = -fullC
+        self.sc = self.fc     # default student score
         self.gp = graderProp
         self.sp = studentProp
 
@@ -376,7 +377,9 @@ def runStudent(args, startDir, match_obj, solutions) :
         out = open(dest, 'w')
         out.write(error)
         out.close() 
+        return False
     print ("cid %s: finished tests" % (cid))
+    return True
 
 
 # Compile solution and generate golden
@@ -432,6 +435,49 @@ def genInfos(args):
     return infos
 
 
+# read in rubrics lines 
+def getRubrics(args) :
+    rpattern = r'([-\d\s]*)\|([\w\s-]*)\|([\w\s-]*)'
+    keyWord = ""
+    rb = rubrics()
+    for line in open(args.rubric):
+        match_obj = re.match(rpattern, line)
+        if match_obj is None :
+            if (isKeyWord(line)) :
+                keyWord = line.rstrip().lower()
+                '''
+                if keyWord == 'style' :
+                    os.system('%s %s' % ('more ', origin))
+                print "\n" * 3
+                print keyWord.upper(), ":"  
+                '''
+            else : 
+                print "Invaild syntax in rubric: ", line
+        else :
+            fullCredit = int(match_obj.group(1).rstrip())
+            graderProp = match_obj.group(2).rstrip()
+            studentProp = match_obj.group(3).rstrip()
+            rl = rubricLine(fullCredit, graderProp, studentProp)
+            # rl.getStudentScore()
+            rb.addRubric(rl, keyWord)
+    return rb
+
+
+# get student feedback from command line
+def fillRubrics(rb, file) :
+    kws = rb.getAllKw()
+    for kw in kws :
+        if kw == 'style' :
+            os.system('%s %s' % ('more ', file))
+        print "\n" * 3
+        line = raw_input("'n' to skip  \t %s?" % kw.upper())
+        if len(line) > 0 and (line[0] == 'n' or line[0] == 'N') :
+            continue
+        else :  
+            for rl in rb.dicts[kw] :
+                rl.getStudentScore()
+
+
 def getComment(root, mat_obj, scores, slips, infos, args):
     filename = mat_obj.group(0)
     lastName = mat_obj.group(1)
@@ -441,31 +487,27 @@ def getComment(root, mat_obj, scores, slips, infos, args):
     htmlName = id2Str(int(fid))
     origin = os.path.join(root, filename)
     print "Grading: " + infos[cid]['name']
+
+    # skip slip day, update slip day using canvas
+    ''' 
     os.system('%s %s' % ('head -15', origin))
     slip = get_Int("Slip days used: ", 0, 2, 0)
     slips[cid] = slip
+    '''
 
-    rpattern = r'([-\d\s]*)\|([\w\s-]*)\|([\w\s-]*)'
-    keyWord = ""
-    rb = rubrics()
-    for line in open(args.rubric):
-        match_obj = re.match(rpattern, line)
-        if match_obj is None :
-            if (isKeyWord(line)) :
-                keyWord = line.rstrip().lower()
-                if keyWord == 'style' :
-                    os.system('%s %s' % ('more ', origin))
-                print "\n" * 3
-                print keyWord.upper(), ":"  
-            else : 
-                print "Invaild syntax in rubric: ", line
+    rb = getRubrics(args)
+    while True : 
+        fillRubrics(rb, origin) 
+        regrade = raw_input('\'m\' for manual, \'a\' for auto, enter to continue \t Regrade?')
+        if len(regrade) == 0 :
+            break
+        elif regrade[0].lower() == 'm' :
+            print "Manual Regrade. Saved to \'regrade\' folder."
+            return False 
+        elif regrade[0].lower() == 'a' :
+            continue
         else :
-            fullCredit = int(match_obj.group(1).rstrip())
-            graderProp = match_obj.group(2).rstrip()
-            studentProp = match_obj.group(3).rstrip()
-            rl = rubricLine(fullCredit, graderProp, studentProp)
-            rl.getStudentScore()
-            rb.addRubric(rl, keyWord)
+            break
 
     pr = format()
     pr.addHeader()
@@ -477,7 +519,7 @@ def getComment(root, mat_obj, scores, slips, infos, args):
     pr.addLine("Section 5 digit ID: %s" % infos[cid]['unique'] )
     pr.addLine("Grader Name: %s" % args.grader)
     pr.addLine("")
-    pr.addLine("Slipday for this assignment: %d" % slip)
+    # pr.addLine("Slipday for this assignment: %d" % slip)
     pr.addLine("Total point: %s" % rb.printTotal())
     pr.addLine("")
     
@@ -497,16 +539,8 @@ def getComment(root, mat_obj, scores, slips, infos, args):
                 pr.addLine(str(line))
             pr.addLine("")
 
-    otherComment = raw_input('Other comments to student (\'special\' for manual regrade, \'regrade\' to auto regrade) \n:')
-    if otherComment.lower() == "regrade":
-        print 'Grade ' + infos[cid]['name'] + ' again ... \n'
-        getComment(root, mat_obj, scores, slips, infos, args)
-        return
-    elif otherComment.lower() == "special":
-        with open ('special_case.txt', "a") as sfile:
-            sfile.write(cid + '\t' + infos[cid]['name'] + '\n')
-        print "Logged to \"special_case.txt\": " + cid + '\t' + infos[cid]['name'] + '\n'
-    elif len(otherComment) > 0 :
+    otherComment = raw_input('Other comments to student:')
+    if len(otherComment) > 0 :
         pr.addLine("")
         pr.addLine(otherComment)
         pr.addLine("")
@@ -517,6 +551,7 @@ def getComment(root, mat_obj, scores, slips, infos, args):
     pr.addLine("Best, ")
     pr.addLine("%s -- %s@cs.utexas.edu" % (args.grader, args.cslogin) )
     pr.addFooter()
+
     location = os.path.join(root, filename)
     pr.printFile(location)
 
@@ -524,6 +559,7 @@ def getComment(root, mat_obj, scores, slips, infos, args):
     pr.printScreen()
     print "=" * 80
     print "\n" * 3
+    return True
     
 
 def isKeyWord(line):
@@ -615,16 +651,25 @@ def get_Int(prop, minV, maxV, deV):
                 else:
                     return (intTarget)
 
+def makeFolder(root, name) :
+    folder = os.path.join(root, name)
+    if not os.path.exists(folder):
+        os.makedirs(folder)  
+    return folder
+
 
 def main(args):
     assert os.path.isdir(args.turnin)
     startDir = os.getcwd()
+
     if len(args.input) > 0 and len(args.output) > 0:
         assert len(args.input) == len(args.output)
     solutions = genGolden(args)
-    feedbackFolder = os.path.join(startDir, 'feedback')
-    if not os.path.exists(feedbackFolder):
-        os.makedirs(feedbackFolder)    
+
+    feedbackFolder = makeFolder(startDir, 'feedback')
+    compilerrFolder = makeFolder(startDir, 'compilerr')
+    wrongNameFolder = makeFolder(startDir, 'wrongName')
+    regradeFolder = makeFolder(startDir, 'regrade')
 
     os.chdir(startDir)
     scores = {}
@@ -634,16 +679,25 @@ def main(args):
     #             lastN    firstN   cId     fid     fName
     fpattern = r'([\w-]*)--([\w-]*)_([\d]*)_([\d]*)_([\w]*.java)'
     for filename in os.listdir(args.turnin):
+        raw_input("\n\n\nnext student(Ctrl-D to stop) ?")
         match_obj = re.match(fpattern, filename)
         if match_obj is None :
             print "Filename syntex error: ", filename
             continue
-        copy(feedbackFolder, os.path.join(args.turnin, filename))
-        runStudent(args, startDir, match_obj, solutions)
+        elif match_obj.group(5) != args.solution :
+            print "Wrong file name !!! Grade later -> %s\n" % filename
+            copy(wrongNameFolder, os.path.join(startDir, args.turnin, filename))
+            continue 
+        if not runStudent(args, startDir, match_obj, solutions) :
+            print "\nCompile Error !!! Grade later -> %s\n" % filename
+            copy(compilerrFolder, os.path.join(startDir, args.turnin, filename))
+            continue
+        copy(feedbackFolder, os.path.join(startDir, args.turnin, filename))
         os.chdir(startDir)
-        getComment(feedbackFolder, match_obj, scores, slips, infos, args)        
+        if not getComment(feedbackFolder, match_obj, scores, slips, infos, args):
+            copy(regradeFolder, os.path.join(startDir, args.turnin, filename))
+            continue
         update_grades(args.info, scores, slips, args.assignment)
-        raw_input("\n\n\nnext student? (Ctrl-D to stop)")
 
 
 if __name__ == '__main__':
