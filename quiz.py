@@ -10,7 +10,6 @@ A = FLAGS.add_argument
 A('-c', '--columnName', type = str, help = 'Column Name, such as \'Quiz 1 (3294843)\'')
 A('-m', '--maxV', type = int, help = 'Maxmun score allowed, such as \'10\' for Quiz')
 A('-i', '--info', metavar = 'FILE', help = 'CSV file containing student information')
-A('-o', '--output', metavar = 'FILE', help = 'name of the outputed .CSV file')
 
 def main(args):
     f = open(args.info)
@@ -47,6 +46,8 @@ def main(args):
     finally: 
         f.close()
     print ">> Total:", total, ", where", noScore, "has no score yet."  
+    
+    os.system('%s %s %s' % ('cp', args.info, '.' + args.info))
 
     while (True) :
     	uteid = raw_input(">> input student ut eid (\'done\' to stop): ")
@@ -112,9 +113,9 @@ def minDistance(word1, word2):
 
 # write to file
 def write(scores, index, args):    
-    f = open(args.info)
+    f = open('.' + args.info)
     reader = csv.reader(f)
-    outFile = open(args.output, 'wb')
+    outFile = open(args.info, 'wb')
     writer = csv.writer(outFile, delimiter = ',', quotechar = '"', quoting = csv.QUOTE_MINIMAL)
     writer.writerow(reader.next())
     writer.writerow(reader.next())

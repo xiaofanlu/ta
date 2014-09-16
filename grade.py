@@ -30,13 +30,16 @@ A = FLAGS.add_argument
 A('-a', '--assignment', type=int, help='Assignment Number')
 A('-c', '--cslogin', type=str, help='CS login of grader')
 A('-f', '--folder', metavar='DIR', help='Folder with all required files')
-A('-g', '--grader', type=str, metavar='Grader\'s Name', help='Name of the grader')
+A('-g', '--grader', type=str, metavar='Grader\'s Name', 
+                                                 help='Name of the grader')
 A('-i', '--input', default=[], nargs='+', type=str, metavar='FILE', help='Test input base file name')
 A('-o', '--output', default=[], nargs='+', type=str, metavar='FILE', help='Test output base file name')
 A('-n', '--info', metavar='FILE', help='CSV file containing student information')
 A('-r', '--rubric', metavar='FILE', help='txt file cotaining the grading rubric')
 A('-s', '--solution', default='Song.java', metavar='FILE', help='instructor solution')
 A('-t', '--turnin', default='turnin', metavar='DIR', help='turnin folder with .java file')
+A('-w', '--webbrowser', default=False, type=bool, help='Open diff result in webbrowser if True')
+
 
 
 # module-local exception classes
@@ -120,7 +123,7 @@ class Difference(object):
                                 fromdesc='solution',
                                 todesc='student'))
         queue.close()
-        
+
     def run(self, timeout):
         queue = multiprocessing.Queue(1) # Maximum size is 1
         proc = multiprocessing.Process(target=self.target, args=(self, queue))
@@ -297,7 +300,7 @@ def diff(solution, student):
     '''Diff the contents of instructor and student output.'''
     command = Difference(solution, student)
     return command.run(timeout=15)
-    
+
 def runStudent(args, startDir, match_obj, solutions) : 
     filename = match_obj.group(0)
     lastName = match_obj.group(1)
@@ -356,8 +359,8 @@ def runStudent(args, startDir, match_obj, solutions) :
                 logging.error(error)
             pos += 1
             copy(diffFolder, dest)
-            webbrowser.open_new_tab("file://" + os.path.join(diffFolder, dest))
-
+            if args.webbrowser :
+                webbrowser.open_new_tab("file://" + os.path.join(diffFolder, dest))
             '''
             newDir = os.listdir(os.getcwd())
             outDir = 'test %s' % pos
@@ -415,7 +418,7 @@ def genInfos(args):
     UNIQUE = 4
     SCORE = 8
     pattern = r'([\w\s]*)\(([\d]*)\)'
-
+    
     f = open(args.info)
     try: 
         reader = csv.reader(f)
@@ -455,7 +458,7 @@ def getRubrics(args) :
                 print "Invaild syntax in rubric: ", line
         else :
             fullCredit = int(match_obj.group(1).rstrip())
-            graderProp = match_obj.group(2).rstrip()
+            graderProp = match_obj.group(2)
             studentProp = match_obj.group(3).rstrip()
             rl = rubricLine(fullCredit, graderProp, studentProp)
             # rl.getStudentScore()
@@ -511,7 +514,10 @@ def getComment(root, mat_obj, scores, slips, infos, args):
 
     pr = format()
     pr.addHeader()
-    pr.addLine("CS312 Assignment %d Feedback:" % int(args.assignment))
+    pr.addLine("Hi %s%s," % (firstName[0].upper(), firstName[1:].lower()))
+    pr.addLine("")
+    pr.addLine("Here is the feedback for Assignment %d. Let me know if you have any question. " % int(args.assignment))
+    pr.addLine("")
     pr.addLine("")
     pr.addLine("Submitted File: %s" % args.solution)
     pr.addLine("Name: %s %s" % (firstName.upper(), lastName.upper()))
@@ -575,10 +581,10 @@ def update_grades(info, scores, slips, assignment):
     scoreIndex = 0
     slipIndex = 0
     
-    f = open(info)
+    f = open('.' + info)   # base file for the format
     reader = csv.reader(f)
     studentData = reader.next()
-    outFile = open('updated_grades.csv', 'wb')
+    outFile = open(info, 'wb')
     writer = csv.writer(outFile, delimiter = ',', quotechar = '"', quoting = csv.QUOTE_MINIMAL)
     writer.writerow(studentData)
 
@@ -658,6 +664,17 @@ def makeFolder(root, name) :
     return folder
 
 
+def finish(args) :
+    print "Finishing grading ..."
+    print r"Graded file moved to 'graded'"
+    print "Grade have been updated in \'%s\'" % args.info
+    print "Todo: "
+    print r"1. check 'compilerr' for files with compile error"
+    print r"2. check 'wrongName' for files with incorrect name"
+    print r"3. check 'regrade' for files to manual regrade"
+    print "done"
+
+
 def main(args):
     assert os.path.isdir(args.turnin)
     startDir = os.getcwd()
@@ -670,35 +687,46 @@ def main(args):
     compilerrFolder = makeFolder(startDir, 'compilerr')
     wrongNameFolder = makeFolder(startDir, 'wrongName')
     regradeFolder = makeFolder(startDir, 'regrade')
+    gradedFolder = makeFolder(startDir, 'graded')
 
     os.chdir(startDir)
     scores = {}
     slips = {}
     infos = genInfos(args)
+    move(startDir, args.info, '.' + args.info)
     
     #             lastN    firstN   cId     fid     fName
     fpattern = r'([\w-]*)--([\w-]*)_([\d]*)_([\d]*)_([\w]*.java)'
     for filename in os.listdir(args.turnin):
-        raw_input("\n\n\nnext student(Ctrl-D to stop) ?")
+        filePath = os.path.join(startDir, args.turnin, filename)
+        stop = raw_input("\n\n\nnext student('done' to stop) ?")
+        if 'done' in stop :
+            break
         match_obj = re.match(fpattern, filename)
         if match_obj is None :
             print "Filename syntex error: ", filename
             continue
         elif match_obj.group(5) != args.solution :
             print "Wrong file name !!! Grade later -> %s\n" % filename
-            copy(wrongNameFolder, os.path.join(startDir, args.turnin, filename))
+            copy(wrongNameFolder, filePath)
+            os.system('%s %s' % ('rm ', filePath))
             continue 
         if not runStudent(args, startDir, match_obj, solutions) :
             print "\nCompile Error !!! Grade later -> %s\n" % filename
-            copy(compilerrFolder, os.path.join(startDir, args.turnin, filename))
+            copy(compilerrFolder, filePath)
+            os.system('%s %s' % ('rm ', filePath))
             continue
-        copy(feedbackFolder, os.path.join(startDir, args.turnin, filename))
+
+        copy(feedbackFolder, filePath)
         os.chdir(startDir)
         if not getComment(feedbackFolder, match_obj, scores, slips, infos, args):
             copy(regradeFolder, os.path.join(startDir, args.turnin, filename))
             continue
         update_grades(args.info, scores, slips, args.assignment)
-
+        copy(gradedFolder, filePath)
+        os.system('%s %s' % ('rm ', filePath))
+    finish()
+        
 
 if __name__ == '__main__':
     main(FLAGS.parse_args())
